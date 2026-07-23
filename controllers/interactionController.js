@@ -123,4 +123,107 @@ exports.getCommentsByPost = async (req, res) => {
         console.error("Error ambil komentar:", error);
         res.status(500).json({ success: false, message: 'Gagal memuat komentar' });
     }
+
+    
+};
+
+exports.toggleFollow = async (req, res) => {
+    const { id_following } = req.body; // ID user yang ingin di-follow
+    const id_follower = req.user.id_user; // ID user yang sedang login (dirimu)
+
+    if (!id_following) {
+        return res.status(400).json({ success: false, message: 'ID User yang ingin diikuti wajib disertakan!' });
+    }
+
+    if (id_following === id_follower) {
+        return res.status(400).json({ success: false, message: 'Anda tidak dapat mengikuti diri sendiri!' });
+    }
+
+    try {
+        // Cek apakah sudah follow sebelumnya
+        const [existingFollow] = await db.query(
+            'SELECT * FROM follows WHERE id_follower = ? AND id_following = ?',
+            [id_follower, id_following]
+        );
+
+        if (existingFollow.length > 0) {
+            // JIKA SUDAH FOLLOW -> LAKUKAN UNFOLLOW (Hapus data)
+            await db.query(
+                'DELETE FROM follows WHERE id_follower = ? AND id_following = ?',
+                [id_follower, id_following]
+            );
+            return res.json({ success: true, message: 'Berhasil berhenti mengikuti (Unfollow).' });
+        } else {
+            // JIKA BELUM FOLLOW -> LAKUKAN FOLLOW (Insert data)
+            const id_follow = uuidv4();
+            await db.query(
+                'INSERT INTO follows (id_follow, id_follower, id_following) VALUES (?, ?, ?)',
+                [id_follow, id_follower, id_following]
+            );
+            return res.json({ success: true, message: 'Berhasil mengikuti (Follow)!' });
+        }
+    } catch (error) {
+        console.error("Error pada Follow:", error);
+        res.status(500).json({ success: false, message: 'Terjadi kesalahan server saat memproses Follow' });
+    }
+};
+
+exports.toggleSavePost = async (req, res) => {
+    const { id_post } = req.body; // ID postingan yang ingin disimpan
+    const id_user = req.user.id_user; // ID user yang sedang login
+
+    if (!id_post) {
+        return res.status(400).json({ success: false, message: 'ID Postingan wajib disertakan!' });
+    }
+
+    try {
+        // Cek apakah postingan sudah disimpan sebelumnya oleh user ini
+        const [existingSave] = await db.query(
+            'SELECT * FROM saved_posts WHERE id_user = ? AND id_post = ?',
+            [id_user, id_post]
+        );
+
+        if (existingSave.length > 0) {
+            // JIKA SUDAH DISIMPAN -> BATALKAN SIMPAN (Hapus dari saved_posts)
+            await db.query(
+                'DELETE FROM saved_posts WHERE id_user = ? AND id_post = ?',
+                [id_user, id_post]
+            );
+            return res.json({ success: true, message: 'Postingan dihapus dari daftar simpanan.' });
+        } else {
+            // JIKA BELUM DISIMPAN -> SIMPAN POSTINGAN (Insert ke saved_posts)
+            const id_saved = uuidv4();
+            await db.query(
+                'INSERT INTO saved_posts (id_saved, id_user, id_post) VALUES (?, ?, ?)',
+                [id_saved, id_user, id_post]
+            );
+            return res.json({ success: true, message: 'Postingan berhasil disimpan!' });
+        }
+    } catch (error) {
+        console.error("Error pada Saved Post:", error);
+        res.status(500).json({ success: false, message: 'Terjadi kesalahan server saat menyimpan postingan' });
+    }
+};
+
+exports.getSavedPosts = async (req, res) => {
+    const id_user = req.user.id_user; // User yang sedang login
+
+    try {
+        // Mengambil semua postingan yang disimpan oleh user, digabung dengan data postingannya dari view post_feed
+        const [rows] = await db.query(
+            `SELECT s.id_saved, s.saved_at, p.* FROM saved_posts s
+             JOIN post_feed p ON s.id_post = p.id_post
+             WHERE s.id_user = ?
+             ORDER BY s.saved_at DESC`,
+            [id_user]
+        );
+
+        res.json({
+            success: true,
+            data: rows
+        });
+    } catch (error) {
+        console.error("Error ambil Saved Posts:", error);
+        res.status(500).json({ success: false, message: 'Gagal memuat postingan yang disimpan' });
+    }
 };
